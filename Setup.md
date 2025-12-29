@@ -247,6 +247,14 @@ This starts the local vector database.
   lsof -i :5000
   kill -9 <PID>
   ```
+- If facing network issues, ensure you have done adb reverse and reset cache
+  ```sh
+  adb reverse tcp:5000 tcp:5000
+  ```
+  ```sh
+  cd Frontend
+  npx react-native start --reset-cache
+  ```
 
 ### Database Issues
 
