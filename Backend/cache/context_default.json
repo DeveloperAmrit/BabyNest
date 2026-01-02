@@ -1,12 +1,12 @@
 {
-  "current_week": 3,
-  "location": "Australia",
+  "current_week": 1,
+  "location": "United States",
   "age": 30,
   "weight": 65,
-  "due_date": "2026-09-17",
-  "lmp": "2025-12-11",
-  "cycle_length": 28,
-  "period_length": 5,
+  "due_date": "2026-10-04",
+  "lmp": "2025-12-16",
+  "cycle_length": 40,
+  "period_length": 2,
   "tracking_data": {
     "weight": [
       {
@@ -101,5 +101,5 @@
     "blood_pressure": [],
     "discharge": []
   },
-  "last_updated": "2025-12-29T12:54:59.903808"
+  "last_updated": "2026-01-02T21:29:17.600560"
 }
