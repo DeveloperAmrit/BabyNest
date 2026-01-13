@@ -124,6 +124,6 @@ def update_profile():
         agent = get_agent(db_path)
         agent.update_cache(data_type="profile", operation="update")
         
-        return jsonify({"status": "success", "message": "Profile updated successfully", "dueDate": due_date}), 200
-    except sqlite3.OperationalError as error:    
-        return jsonify({"error": str(error)}), 500    
+        return jsonify({"status": "success", "message": "Profile updated successfully"}), 200
+    except sqlite3.OperationalError:    
+        return jsonify({"error": "Database Error"}), 500
