@@ -412,7 +412,7 @@ const ScheduleScreen = () => {
             style={{
               ...styles.appointment,
               backgroundColor: colors[index % colors.length],
-              top: to_min(appt.appointment_time) - 370,
+              top: (to_min(appt.appointment_time) - 480) * (80 / 60) + 10,
               zIndex: 1,
             }}>
             <TouchableOpacity onPress={() => handleAppointment(appt)}>

@@ -106,6 +106,27 @@ def get_agent_context():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/agent/refresh", methods=["POST"])
+def refresh_agent_context():
+    """Force refresh of agent context and embeddings."""
+    try:
+        data = request.get_json() if request.is_json else {}
+        user_id = data.get("user_id", "default")
+        
+        # Trigger refresh
+        agent.refresh_cache_and_embeddings()
+        
+        # Get fresh context to return
+        context = agent.get_user_context(user_id)
+        
+        return jsonify({
+            "status": "success", 
+            "message": "Context refreshed successfully",
+            "context": context
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/agent/tasks/recommendations", methods=["GET"])
 def get_task_recommendations():
     """Get LLM-powered task recommendations based on current context."""

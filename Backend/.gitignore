@@ -3,4 +3,13 @@ pycache/
 __pycache__/
 env
 db/database.db
+*.log
+logs/
+.DS_Store
+*.sqlite3
+chroma_db/
+my_chroma_db/
+db/chromadb/
+*.bin
+*.hash
 

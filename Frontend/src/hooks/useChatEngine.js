@@ -100,43 +100,34 @@ export const useChatEngine = (isInitialized, context, refreshContext) => {
 
       conversationContext.setUserContext(context);
 
+      // Strategy: RAG -> Backend Agent -> Local LLM
+      
+      // Step 1: Try RAG if enabled
       if (useRAGMode) {
-        if (conversationContext.hasPendingFollowUp()) {
-          if (__DEV__) console.log('🤖 Processing follow-up response with RAG...');
-          result = await conversationContext.processFollowUpResponse(text, ragService);
-        } else {
-          if (__DEV__) console.log('🤖 Processing new query with RAG...');
-          result = await ragService.processQuery(text, context);
+        try {
+          if (conversationContext.hasPendingFollowUp()) {
+            if (__DEV__) console.log('🤖 Processing follow-up response with RAG...');
+            result = await conversationContext.processFollowUpResponse(text, ragService);
+          } else {
+            if (__DEV__) console.log('🤖 Processing new query with RAG...');
+            result = await ragService.processQuery(text, context);
+          }
+          
+          if (result && typeof result === 'object' && result.message) {
+            response = result.message;
+            if (__DEV__) console.log('✅ RAG Response received');
+          }
+        } catch (ragError) {
+          console.warn('RAG processing failed:', ragError);
+          // Fall through to backend
         }
-      } else {
-        if (__DEV__) console.log('📞 Processing with local model...');
-        const startTime = Date.now();
-        response = await generateResponse(updatedConversationForModel);
-        if (__DEV__) {
-            const endTime = Date.now();
-            console.log(`⏱️ Model Response Latency: ${endTime - startTime}ms`);
-        }
-        
-        result = { message: response, intent: 'general_chat', action: null };
       }
 
-      // Handle RAG Result
-      if (result && typeof result === 'object') {
-        response = result.message;
-
-        if (result.requiresFollowUp && result.intent && result.partialData && result.missingFields) {
-          conversationContext.setPendingFollowUp(
-            result.intent,
-            result.partialData,
-            result.missingFields
-          );
-        } else {
-          conversationContext.clearPendingFollowUp();
-        }
-      } else {
-        // Fallback to backend agent
+      // Step 2: Fallback to Backend Agent if no response yet
+      if (!response) {
+        if (__DEV__) console.log('☁️ Attempting Backend Agent...');
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout for backend
 
         try {
           const agentResponse = await fetch(`${BASE_URL}/agent`, {
@@ -151,13 +142,45 @@ export const useChatEngine = (isInitialized, context, refreshContext) => {
           if (agentResponse.ok) {
             const agentData = await agentResponse.json();
             response = agentData.response;
+            if (__DEV__) console.log('✅ Backend Agent Response received');
+            result = { message: response, intent: 'backend_fallback', action: null };
           } else {
-            throw new Error('Backend agent failed');
+            throw new Error(`Backend agent failed with ${agentResponse.status}`);
           }
         } catch (backendError) {
           clearTimeout(timeoutId);
-          console.warn('Backend fallback failed or timed out, using local model:', backendError.message);
+          console.warn('Backend fallback failed or timed out:', backendError.message);
+          // Fall through to local model
+        }
+      }
+
+      // Step 3: Fallback to Local Model if still no response
+      if (!response) {
+        if (__DEV__) console.log('📞 Fallback to local model...');
+        try {
+          const startTime = Date.now();
           response = await generateResponse(updatedConversationForModel);
+          if (__DEV__) {
+              const endTime = Date.now();
+              console.log(`⏱️ Model Response Latency: ${endTime - startTime}ms`);
+          }
+          result = { message: response, intent: 'local_llm', action: null };
+        } catch (localError) {
+          console.error("Local model generation failed:", localError);
+          throw new Error("All AI services failed. Please try again later.");
+        }
+      }
+
+      // Post-processing of result
+      if (result && typeof result === 'object') {
+        if (result.requiresFollowUp && result.intent && result.partialData && result.missingFields) {
+          conversationContext.setPendingFollowUp(
+            result.intent,
+            result.partialData,
+            result.missingFields
+          );
+        } else {
+          conversationContext.clearPendingFollowUp();
         }
       }
 

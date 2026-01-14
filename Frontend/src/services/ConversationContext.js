@@ -113,7 +113,47 @@ class ConversationContext {
 
     try {
       // Extract data from the follow-up response
-      const extractedData = await ragService.extractData(userQuery, this.pendingFollowUp.intent);
+      let extractedData = await ragService.extractData(userQuery, this.pendingFollowUp.intent);
+
+      // Fallback: If strict extraction failed for the expected field, use the raw user query
+      // This handles cases where user provides custom inputs (e.g., custom location or appointment type)
+      const expectedField = this.pendingFollowUp.missingFields && this.pendingFollowUp.missingFields.length > 0
+          ? this.pendingFollowUp.missingFields[0] 
+          : null;
+
+      if (expectedField && userQuery && userQuery.trim().length > 0) {
+          // Initialize if null
+          if (!extractedData) extractedData = {};
+          
+          // If the extractor didn't find the value for the field we just asked about
+          if (!extractedData[expectedField]) {
+             const allowRawInputFields = [
+                 'location', 'title', 'note', 'symptom', 'name', 'medicine_name', 
+                 'dose', 'type', 'color', 'mood', 'intensity', 'quality',
+                 'metric', 'chart_type', 'action_type', 'frequency', 'start_date', 'end_date',
+                 'pressure_reading', 'discharge_type', 'update_date', 'update_time'
+             ];
+             
+             // For these fields, we trust the user's input if it wasn't caught by the regex/keyword matchers
+             if (allowRawInputFields.includes(expectedField)) {
+                 extractedData[expectedField] = userQuery.trim();
+             } 
+             // Special handling for time/date - logic is looser here to accept natural language
+             else if (['time', 'date', 'bedtime', 'wake_time'].includes(expectedField)) {
+                 if (userQuery.length < 30) {
+                     extractedData[expectedField] = userQuery.trim();
+                 }
+             }
+             // Numeric fields fallback
+             else if (['weight', 'duration', 'systolic', 'diastolic', 'week'].includes(expectedField)) {
+                 // extracting numbers if regex failed but user might have typed "about 60"
+                 const numMatch = userQuery.match(/(\d+(\.\d+)?)/);
+                 if (numMatch) {
+                     extractedData[expectedField] = parseFloat(numMatch[1]);
+                 }
+             }
+          }
+      }
       
       // Ensure extractedData is a valid object
       if (!extractedData || typeof extractedData !== 'object') {

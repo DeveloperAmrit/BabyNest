@@ -158,6 +158,7 @@ export default function ChatScreen() {
 
   const handleCopyMessage = (message) => {
     Clipboard.setString(message);
+    Alert.alert("Copied", "Message copied to clipboard.");
   };
 
   const handlePaste = async () => {

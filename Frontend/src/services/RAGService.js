@@ -1034,8 +1034,8 @@ class RAGService {
       /(\d{1,2}\/\d{1,2}\/\d{4})/,
       /(\d{1,2}-\d{1,2}-\d{4})/,
       /(\d{4}-\d{1,2}-\d{1,2})/,
-      /(\d{1,2}\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4})/i,
-      /(\d{1,2}\s+(?:january|february|march|april|may|june|july|august|september|october|november|december))/i,
+      /(\d{1,2}(?:st|nd|rd|th)?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+\d{4})/i,
+      /(\d{1,2}(?:st|nd|rd|th)?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec))/i,
       /(tomorrow|today|next week|next month)/i,
       /(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i,
       /(january|february|march|april|may|june|july|august|september|october|november|december)/i,
@@ -1057,15 +1057,21 @@ class RAGService {
    */
   extractTime(query) {
     const timePatterns = [
-      /(\d{1,2}:\d{2}\s*(?:am|pm|AM|PM))/,
-      /(\d{1,2}\s*(?:am|pm|AM|PM))/,
-      /(morning|afternoon|evening|night)/
+      // Format: 8:00pm, 8:00 pm
+      /(\d{1,2}:\d{2}\s*(?:am|pm|AM|PM))/i,
+      // Format: 8pm, 8 pm
+      /(\d{1,2}\s*(?:am|pm|AM|PM))/i,
+      // Format: at 8, at 8:00 (loose numeric with 'at' prefix)
+      /(?:at|@)\s*(\d{1,2}(?::\d{2})?(?:\s*(?:am|pm|AM|PM))?)/i,
+      // Keywords
+      /(morning|afternoon|evening|night)/i
     ];
 
     for (const pattern of timePatterns) {
       const match = query.match(pattern);
       if (match) {
-        return match[1];
+        // For the 'at' pattern, capture group 1 is the time part
+        return match[1] || match[0];
       }
     }
     return null;
@@ -1596,15 +1602,25 @@ class RAGService {
       return `${yearStr}-${monthStr}-${dayStr}`;
     }
 
-    // Handle dates like "12 october" or "12 October 2025"
+    // Handle dates like "12 october" or "12th October 2025" or "16th jan"
     const monthNames = ['january', 'february', 'march', 'april', 'may', 'june',
       'july', 'august', 'september', 'october', 'november', 'december'];
+    
+    // Map abbreviations
+    const monthMap = {
+      'jan': 'january', 'feb': 'february', 'mar': 'march', 'apr': 'april', 
+      'jun': 'june', 'jul': 'july', 'aug': 'august', 'sep': 'september', 
+      'sept': 'september', 'oct': 'october', 'nov': 'november', 'dec': 'december'
+    };
 
-    const dateMatch = dateString.match(/(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(\d{4}))?/i);
+    const dateMatch = dateString.match(/(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)(?:\s+(\d{4}))?/i);
     
     if (dateMatch) {
       const day = parseInt(dateMatch[1]);
-      const monthName = dateMatch[2].toLowerCase();
+      let monthName = dateMatch[2].toLowerCase();
+      // Resolve abbreviation if needed
+      if (monthMap[monthName]) monthName = monthMap[monthName];
+
       const year = dateMatch[3] ? parseInt(dateMatch[3]) : currentYear;
       const month = monthNames.indexOf(monthName);
 
@@ -1648,13 +1664,7 @@ class RAGService {
       return '09:00'; // Default to 9 AM
     }
 
-    // Handle "morning", "afternoon", "evening"
-    if (timeString.toLowerCase().includes('morning')) return '09:00';
-    if (timeString.toLowerCase().includes('afternoon')) return '14:00';
-    if (timeString.toLowerCase().includes('evening')) return '18:00';
-    if (timeString.toLowerCase().includes('night')) return '20:00';
-
-    // Handle time formats like "2pm", "2 pm", "14:00"
+    // Try to parse specific time formats first (Regex)
     const timeMatch = timeString.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
     
     if (timeMatch) {
@@ -1668,9 +1678,20 @@ class RAGService {
       } else if (period === 'am' && hours === 12) {
         hours = 0;
       }
+      // Heuristic: If no period specified and user says "at 8", assume 8:00 (Morning)
+      // unless numbers are > 12, then it's clear.
+      // We could add logic here: if matches "evening" keyword elsewhere in string?
+      // For now, raw numbers default to 24h format (8 -> 08:00, 20 -> 20:00)
 
       return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
     }
+
+    // Fallback to keywords if no specific numeric time found
+    const lowerTime = timeString.toLowerCase();
+    if (lowerTime.includes('morning')) return '09:00';
+    if (lowerTime.includes('afternoon')) return '14:00';
+    if (lowerTime.includes('evening')) return '18:00';
+    if (lowerTime.includes('night')) return '20:00';
 
     return '09:00'; // Default fallback
   }
@@ -1703,9 +1724,9 @@ class RAGService {
       if (response.ok) {
         return {
           success: true,
-          message: `📅 Appointment "${data.title || 'Appointment'}" scheduled for ${data.date || 'TBD'} at ${data.time || 'TBD'}${data.location ? ` at ${data.location}` : ''}`,
+          message: `📅 Appointment "${data.title || 'Appointment'}" scheduled for ${properDate} at ${properTime}${data.location ? ` at ${data.location}` : ''}`,
           action: 'navigate',
-          screen: 'appointments'
+          screen: 'Calendar'
         };
       } else {
         throw new Error('Failed to create appointment');
@@ -1738,7 +1759,7 @@ class RAGService {
           success: true,
           message: `⚖️ Weight ${data.weight}kg logged for week ${data.week_number || userContext.current_week || 12}${data.note ? ` (Note: ${data.note})` : ''}`,
           action: 'navigate',
-          screen: 'weight'
+          screen: 'Weight'
         };
       } else {
         throw new Error('Failed to log weight');
@@ -1771,7 +1792,7 @@ class RAGService {
           success: true,
           message: `🩺 Symptom "${data.symptom}" logged for week ${data.week_number || userContext.current_week || 12}${data.note ? ` (Note: ${data.note})` : ''}`,
           action: 'navigate',
-          screen: 'symptoms'
+          screen: 'Symptoms'
         };
       } else {
         throw new Error('Failed to log symptoms');
@@ -1806,7 +1827,7 @@ class RAGService {
           success: true,
           message: `🩸 Blood pressure ${data.systolic}/${data.diastolic} logged for week ${data.week_number || userContext.current_week || 12}${data.note ? ` (Note: ${data.note})` : ''}`,
           action: 'navigate',
-          screen: 'bloodpressure'
+          screen: 'BloodPressure'
         };
       } else {
         throw new Error('Failed to log blood pressure');
@@ -1841,7 +1862,7 @@ class RAGService {
           success: true,
           message: `💊 Medicine "${data.name}"${data.dose ? ` (${data.dose})` : ''} logged for week ${data.week_number || userContext.current_week || 12}${data.time ? ` at ${data.time}` : ''}${data.note ? ` (Note: ${data.note})` : ''}`,
           action: 'navigate',
-          screen: 'medicine'
+          screen: 'Medicine'
         };
       } else {
         throw new Error('Failed to log medicine');
@@ -1876,7 +1897,7 @@ class RAGService {
           success: true,
           message: `🩸 Discharge log recorded for week ${data.week_number || userContext.current_week || 12}: ${data.type}, ${data.color}${data.note ? ` (Note: ${data.note})` : ''}`,
           action: 'navigate',
-          screen: 'discharge'
+          screen: 'Discharge'
         };
       } else {
         throw new Error('Failed to log discharge');
@@ -1913,7 +1934,7 @@ class RAGService {
           success: true,
           message: `✅ Task "${data.title}" created for week ${data.week || userContext.current_week || 12} with ${data.priority || 'medium'} priority`,
           action: 'navigate',
-          screen: 'tasks'
+          screen: 'AllTasks'
         };
       } else {
         throw new Error('Failed to create task');
@@ -1973,7 +1994,7 @@ class RAGService {
           success: true,
           message: `👤 Profile updated successfully! ${data.field} set to ${data.value}`,
           action: 'navigate',
-          screen: 'settings'
+          screen: 'Settings'
         };
       } else {
         throw new Error('Failed to update profile');

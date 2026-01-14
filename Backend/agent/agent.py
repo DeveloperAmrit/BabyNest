@@ -1,5 +1,21 @@
 import os
 import sys
+import logging
+
+# Configure logging
+log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs')
+os.makedirs(log_dir, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(os.path.join(log_dir, 'agent.log'))
+    ]
+)
+logger = logging.getLogger("BabyNestAgent")
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.context import get_relevant_context_from_vector_store
@@ -36,28 +52,38 @@ class BabyNestAgent:
     
     def run(self, query: str, user_id: str = "default"):
         if not query or not isinstance(query, str):
+            logger.warning("Received invalid query")
             return "Invalid query. Please provide a valid string."
         
         try:
+            logger.info(f"Processing query for user {user_id}: {query}")
+            
             # Step 1: Get user context from cache (no DB hit if cache is valid)
             user_context = self.get_user_context(user_id)
             if not user_context:
+                logger.warning(f"User context not found for {user_id}")
                 return "User profile not found. Please complete your profile setup first."
             
             # Step 2: Classify intent to see if a specialized handler should be used.
             intent = classify_intent(query)
+            logger.info(f"Classified intent: {intent}")
+            
             if intent in dispatch_intent:
                 # Pass user context to handlers
+                logger.info(f"Dispatching to handler for intent: {intent}")
                 return dispatch_intent[intent](query, user_context)
             
             # Step 3: Retrieve relevant context from the vector store based on the query.
+            logger.info("Retrieving context from vector store (RAG)")
             context = get_relevant_context_from_vector_store(query)
             
             # Step 4: Build the prompt with the retrieved context and user context, then run the LLM.
             prompt = build_prompt(query, context, user_context)
+            logger.info("Running LLM generation")
             return run_llm(prompt)
             
         except Exception as e:
+            logger.error(f"Error processing query: {e}", exc_info=True)
             return f"Error processing query: {e}"
     
     def update_cache(self, user_id: str = "default", data_type: str = None, operation: str = "update"):
@@ -77,7 +103,7 @@ class BabyNestAgent:
     
     def refresh_cache_and_embeddings(self):
         """Manually refresh cache and regenerate embeddings after database changes."""
-        print("🔄 Manually refreshing cache and regenerating embeddings...")
+        logger.info("🔄 Manually refreshing cache and regenerating embeddings...")
         self.context_cache.invalidate_cache()
         update_guidelines_in_vector_store()
     
@@ -89,7 +115,7 @@ class BabyNestAgent:
         """Manually trigger cache cleanup."""
         self.context_cache._cleanup_old_cache_files()
         self.context_cache._cleanup_memory_cache()
-        print("🧹 Cache cleanup completed")
+        logger.info("🧹 Cache cleanup completed")
 
 # Global agent instance
 _agent_instance = None
